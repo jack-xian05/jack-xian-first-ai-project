@@ -102,7 +102,12 @@ def answer(question):
     with st.chat_message("assistant"):
         with st.spinner("正在查阅法规并综合分析..."):
             resp = loop.run_until_complete(rag.aquery(question, param=QueryParam(mode="hybrid")))
-        st.markdown(resp)
+        import time
+        def _stream():
+            for char in resp:
+                yield char
+                time.sleep(0.01)
+        st.write_stream(_stream())
         st.info("⚠️ 本回答由AI根据公开法条生成，仅供参考，不构成正式法律意见。具体问题请咨询执业律师或拨打12333。")
     st.session_state.messages.append({"role": "assistant", "content": resp})
 

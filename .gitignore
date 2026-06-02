@@ -24,3 +24,4 @@ knowledge.txt
 chat_rag.py
 rag.py
 app.py
+*.log
