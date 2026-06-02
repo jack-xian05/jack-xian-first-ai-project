@@ -71,14 +71,28 @@ app = FastAPI(title="劳动法 AI 接口", lifespan=lifespan)
 # ===== 请求体的"格式定义"(Pydantic)=====
 # 这是 FastAPI 又一个香的地方：定义好格式，它自动校验+自动生成文档
 class Question(BaseModel):
-    question: str   # 调用方必须传一个字符串字段 question
+    question: str
+    history: list = []  # 对话历史，可选   # 调用方必须传一个字符串字段 question
 
 # ===== 核心接口：POST /ask =====
 # 和 fastapi_hello 的区别：那个是 GET(参数放URL)，这个是 POST(参数放请求体)
 # 规律：查东西用 GET，提交数据用 POST。问问题算"提交"，所以用 POST。
 @app.post("/ask")
 async def ask(q: Question):
-    answer = await rag.aquery(q.question, param=QueryParam(mode="hybrid"))
+    if q.history:
+        ctx = "\n".join(
+            f"{'用户' if m['role'] == 'user' else '助手'}：{m['content']}"
+            for m in q.history[-6:]
+        )
+        query = f"[对话历史]\n{ctx}\n\n[当前问题]\n{q.question}"
+    else:
+        query = q.question
+    try:
+        answer = await rag.aquery(query, param=QueryParam(mode="hybrid"))
+        if not answer or len(answer.strip()) == 0:
+            answer = "抱歉，暂时无法检索到相关法条，请换个问法重试。"
+    except Exception as e:
+        answer = "服务暂时不可用，请稍后重试。"
     return {
         "question": q.question,
         "answer": answer,
