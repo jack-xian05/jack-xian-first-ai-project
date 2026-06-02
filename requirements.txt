@@ -1,0 +1,8 @@
+streamlit
+openai
+lightrag-hku
+numpy
+python-dotenv
+fastapi
+uvicorn
+pdfplumber

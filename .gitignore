@@ -1,0 +1,26 @@
+# 不要把密钥提交到GitHub！
+.env
+lightrag_store/
+chat_history.db
+.streamlit/secrets.toml
+*.key
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 临时/测试文件（不需要进仓库的）
+chat.py
+tf_demo.py
+hello_tensorflow.py
+hello_langchain.py
+agent.py
+agent_search.py
+resume_analyzer.py
+resume.txt
+knowledge.txt
+chat_rag.py
+rag.py
+app.py
