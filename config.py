@@ -35,8 +35,13 @@ VL_MODEL = "Qwen/Qwen2.5-VL-72B-Instruct"   # 多模态：图片识别
 
 # ===== 路径 =====
 WORKDIR = "./lightrag_store"        # 知识图谱数据
-CORPUS_PATH = "labor_law.txt"       # 法规语料（引用核验也读它）
+CORPUS_PATH = "labor_law.txt"       # 主语料（建图用）
+# 引用核验读取的全部语料（含补充法规），缺失的会自动跳过
+CORPUS_FILES = ["labor_law.txt", "labor_law_extra.txt"]
 DB_PATH = "./chat_history.db"       # 对话历史
+
+# ===== 前后端分离：前端(law_app.py)调后端(law_api.py)的地址 =====
+BACKEND_URL = _get("BACKEND_URL", "http://localhost:8000")
 
 # ===== 前端访问口令（law_app / law_app_v2 用）=====
 # 部署到公网后，没口令任何人都能用、刷爆 API 额度。设了 APP_PASSWORD 就要先输口令才能进。

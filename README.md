@@ -2,6 +2,8 @@
 
 基于**知识图谱 RAG（LightRAG）** + 大语言模型的劳动法咨询助手。能跨多条法规综合分析，针对真实劳动权益场景（被辞退、加班费、社保、三期保护等）给出带法条依据的解答；并支持上传**劳动合同 PDF / 工资条截图**做风险分析。
 
+🌐 **在线体验**：http://47.242.111.247:8501
+
 > ⚠️ 本项目仅供学习与技术演示，AI 生成内容不构成正式法律意见。
 
 ---
@@ -9,10 +11,10 @@
 ## ✨ 功能特点
 
 - **知识图谱检索**：用 LightRAG 把劳动法规构建成实体-关系图谱，能顺着关系链跨多条法规综合回答（普通向量 RAG 做不到）
-- **真实场景覆盖**：覆盖试用期、经济补偿(N/N+1/2N)、违法解除、加班费、社保、工伤、医疗期、三期女职工保护、竞业限制、劳动仲裁等高频场景
+- **真实场景覆盖**：试用期、经济补偿(N/N+1/2N)、违法解除、加班费、社保、工伤、医疗期、三期女职工保护、竞业限制、劳动仲裁等高频场景（含补充法规语料 `labor_law_extra.txt`）
 - **📄 劳动合同分析**：上传劳动合同 PDF，自动提取文字并扫描违法条款 / 风险条款 / 缺失条款（pdfplumber 解析）
 - **🖼️ 图片识别分析**：上传工资条、合同截图、仲裁文书等图片，用多模态模型（Qwen2.5-VL）识别内容并从劳动法角度解读
-- **💬 多轮对话 + 历史持久化**：聊天式界面，对话记录用 SQLite 本地存储，可随时切换 / 删除历史会话
+- **💬 多轮对话 + 流式输出 + 历史持久化**：聊天式界面，支持多轮上下文追问、逐字流式输出，对话记录用 SQLite 本地存储
 - **🛡️ 法条引用核验（真·防幻觉）**：不止靠免责声明——从知识库建立"真实存在的法条"索引，对回答里引用的每条法条自动核验，**编造的法条号当场标红**
 - **📊 自动化评估**：内置 20 题评估集 + 评测脚本，可复现地给出关键点召回率、法条召回率、引用幻觉数
 
@@ -20,21 +22,23 @@
 
 ## 🏗️ 技术架构
 
+支持两种运行形态：
+
+**A. 单体完整版**（`law_app_v2.py`，单进程，部署最简单）
 ```
 用户提问 / 上传文件
    │
    ▼
-Streamlit Web 界面（多 Tab：问答 / 合同分析 / 图片识别）
-   │
-   ├── 智能问答 → LightRAG (hybrid 模式)
-   │      ├── 实体/关系抽取 → 知识图谱检索
-   │      └── 向量检索 (Qwen3-Embedding, 1024维)
-   │             │
-   │             ▼
-   │      DeepSeek-V3.1 综合生成 → 法条引用核验 → 带依据的回答
-   │
-   ├── 合同分析 → pdfplumber 提取文字 → DeepSeek-V4-Flash 风险扫描
-   └── 图片识别 → Qwen2.5-VL-72B 多模态识别 + 劳动法解读
+Streamlit（多 Tab：问答 / 合同分析 / 图片识别）
+   ├── 智能问答 → LightRAG(hybrid) → DeepSeek-V3.1 → 法条引用核验
+   ├── 合同分析 → pdfplumber → DeepSeek-V4-Flash 风险扫描
+   └── 图片识别 → Qwen2.5-VL-72B 多模态
+```
+
+**B. 前后端分离版**（`law_app.py` + `law_api.py`，体现工程分层）
+```
+Streamlit 前端(law_app.py)  ──HTTP──▶  FastAPI 后端(law_api.py)
+  界面/流式/多轮历史                      鉴权 + 限长 + RAG + 引用核验
 ```
 
 **技术栈**：Python · LightRAG · Streamlit · FastAPI · DeepSeek-V3.1 / V4-Flash / Qwen2.5-VL（硅基流动 API）· Qwen3-Embedding · SQLite · pdfplumber
@@ -69,7 +73,7 @@ Streamlit Web 界面（多 Tab：问答 / 合同分析 / 图片识别）
    想把查询模型从 V3.1 升到更快的 V4-Flash，单测一个问题"通过"了，但跑评估集时大面积报错 `response_format type unavailable`。复盘发现：单测之所以"通过"是因为 LightRAG **缓存**了之前 V3.1 的关键词抽取结果，没真的调 V4。LightRAG 的关键词抽取依赖结构化 JSON 输出，实测只有 V3/V3.1 支持。**教训：验证要避开缓存、用未跑过的样本**——最终定为图谱查询用 V3.1、纯生成用 V4-Flash。
 
 5. **从"能跑"到"工程化"的重构**
-   初版把 `llm_func`/`embed_func` 在 4 个文件里复制粘贴、模型名硬编码、API 调用裸奔。重构为：`config.py` 集中配置、`llm_utils.py` 公共模块（含指数退避重试）、`law_api.py` 加接口鉴权与输入限长、新增法条引用核验与自动化评估。
+   初版把 `llm_func`/`embed_func` 在多个文件里复制粘贴、模型名硬编码、API 调用裸奔。重构为：`config.py` 集中配置、`llm_utils.py` 公共模块（含指数退避重试）、`law_api.py` 加接口鉴权与输入限长、新增法条引用核验与自动化评估。
 
 ---
 
@@ -79,26 +83,32 @@ Streamlit Web 界面（多 Tab：问答 / 合同分析 / 图片识别）
 # 1. 安装依赖
 pip install -r requirements.txt
 
-# 2. 配置 API Key：复制 .env.example 为 .env，填入硅基流动 Key
-#    （部署到 Streamlit Cloud 时改用 secrets，代码已自动兼容两种方式）
+# 2. 配置 Key：复制 .env.example 为 .env，填入硅基流动 Key（部署到云用 secrets，代码已兼容）
 cp .env.example .env
 
-# 3. 构建知识图谱（首次运行，约几分钟；之后直接复用 lightrag_store/）
+# 3. 构建知识图谱（首次；之后复用 lightrag_store/）
 python build_graph.py
+python add_docs.py        # 可选：把补充法规 labor_law_extra.txt 增量并入图谱
+```
 
-# 4. 启动 Web 应用（完整版，含合同分析 / 图片识别 / 对话历史）
+**方式 A —— 单体完整版（推荐，一条命令）：**
+```bash
 streamlit run law_app_v2.py
 ```
 
-浏览器访问 `http://localhost:8501`
+**方式 B —— 前后端分离版（需起两个服务）：**
+```bash
+py -m uvicorn law_api:app --port 8000      # 终端1：后端
+streamlit run law_app.py                   # 终端2：前端
+```
 
-> `law_app.py` 是只含「智能问答」的基础版，`law_app_v2.py` 是包含全部功能的完整版，推荐运行后者。
+浏览器访问 `http://localhost:8501`
 
 ---
 
 ## ☁️ 部署上线
 
-已部署在阿里云 ECS，架构 `公网 → nginx(80/443, HTTPS) → streamlit(127.0.0.1:8501)`，systemd 保活、崩溃自重启。前端用访问口令（`APP_PASSWORD`）防止公网刷爆 API 额度。
+已部署在阿里云 ECS（http://47.242.111.247:8501）。生产架构 `公网 → nginx(80/443, HTTPS) → streamlit(127.0.0.1:8501)`，systemd 保活、崩溃自重启。前端用访问口令（`APP_PASSWORD`）防止公网刷爆 API 额度。
 
 完整步骤见 [deploy/DEPLOY.md](deploy/DEPLOY.md)，配置文件在 `deploy/`（systemd 单元 + nginx 反代）。
 
@@ -107,10 +117,11 @@ streamlit run law_app_v2.py
 ## 📂 项目结构
 
 ```
-├── law_app_v2.py     # 主应用（完整版：问答 + 合同分析 + 图片识别 + 历史）
-├── law_app.py        # 基础版（仅智能问答，用于对比演示）
-├── law_api.py        # FastAPI 后端接口（鉴权 + 限长 + 引用核验）
-├── build_graph.py    # 构建知识图谱脚本（一次性，用 V3 抽取实体）
+├── law_app_v2.py     # 单体完整版（问答 + 合同分析 + 图片识别 + 历史）★推荐
+├── law_app.py        # 前后端分离版的前端（调后端 API + 流式 + 多轮）
+├── law_api.py        # FastAPI 后端（鉴权 + 限长 + 多轮历史 + 引用核验）
+├── build_graph.py    # 构建知识图谱（一次性，用 V3 抽取实体）
+├── add_docs.py       # 增量并入补充法规到图谱
 ├── config.py         # 集中配置（Key / 模型 / 路径 / 限制，改一处全局生效）
 ├── llm_utils.py      # 公共 LLM/Embedding 模块（含指数退避重试）
 ├── citation_check.py # 法条引用核验（防幻觉）
@@ -122,10 +133,11 @@ streamlit run law_app_v2.py
 │   ├── DEPLOY.md     # 手把手部署指南
 │   ├── law-app.service       # systemd 常驻配置
 │   └── nginx-law-app.conf    # nginx 反代 + WebSocket 配置
-├── labor_law.txt     # 劳动法规知识库（语料）
+├── labor_law.txt         # 劳动法规知识库（主语料）
+├── labor_law_extra.txt   # 补充法规（仲裁/加班/三期/社保等）
 ├── lightrag_store/   # 已构建的知识图谱数据（图谱 + 向量）
-├── requirements.txt  # 依赖
-├── .env.example      # 环境变量模板（复制为 .env 填入真实 Key）
+├── requirements.txt
+├── .env.example
 └── README.md
 ```
 
@@ -159,7 +171,6 @@ py eval/run_eval.py 5      # 只跑前 5 题（快速验证）
 ## 📈 后续可优化方向
 
 - **提升法条引用召回率**（当前 65%）：在提示词中强制要求标注具体条号
-- 流式输出（提升响应体感）
 - 简单问题走普通 RAG、复杂问题走图谱的智能分流
 - 接入更完整的法规库与司法解释
 - 扫描版 PDF 合同接入 OCR（目前扫描件需走「图片识别」Tab）

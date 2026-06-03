@@ -24,7 +24,6 @@ knowledge.txt
 chat_rag.py
 rag.py
 app.py
-
 # 本地运行产物
-streamlit.log
+*.log
 .claude/

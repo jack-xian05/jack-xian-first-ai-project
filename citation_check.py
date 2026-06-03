@@ -20,14 +20,21 @@ def _normalize_law(name: str) -> str:
     return name.replace("中华人民共和国", "").strip()
 
 
-def build_index(corpus_path: str = None) -> set:
-    """从语料里抽出所有真实存在的 (法律名, 条号)，建成索引集合"""
-    path = corpus_path or config.CORPUS_PATH
-    with open(path, "r", encoding="utf-8") as f:
-        text = f.read()
+def build_index(corpus_paths=None) -> set:
+    """从所有语料里抽出真实存在的 (法律名, 条号)，建成索引集合。
+    默认读 config.CORPUS_FILES（主语料 + 补充语料），缺失的文件自动跳过。"""
+    import os
+    paths = corpus_paths or getattr(config, "CORPUS_FILES", [config.CORPUS_PATH])
+    if isinstance(paths, str):
+        paths = [paths]
     index = set()
-    for law, article in _CITATION.findall(text):
-        index.add((_normalize_law(law), article))
+    for path in paths:
+        if not os.path.exists(path):
+            continue
+        with open(path, "r", encoding="utf-8") as f:
+            text = f.read()
+        for law, article in _CITATION.findall(text):
+            index.add((_normalize_law(law), article))
     return index
 
 
