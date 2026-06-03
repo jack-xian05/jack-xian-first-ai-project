@@ -101,7 +101,17 @@ def answer(question):
         st.markdown(question)
     with st.chat_message("assistant"):
         with st.spinner("正在查阅法规并综合分析..."):
-            resp = loop.run_until_complete(rag.aquery(question, param=QueryParam(mode="hybrid")))
+            try:
+                import requests
+                history = st.session_state.messages[-6:]
+                r = requests.post(
+                    "http://localhost:8000/ask",
+                    json={"question": question, "history": history},
+                    timeout=120
+                )
+                resp = r.json()["answer"]
+            except Exception as e:
+                resp = "服务暂时不可用，请稍后重试。"
         import time
         def _stream():
             for char in resp:
