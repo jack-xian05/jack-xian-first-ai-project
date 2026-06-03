@@ -15,9 +15,11 @@ from lightrag import QueryParam
 
 import config
 import citation_check
+import auth
 from llm_utils import make_rag, sync_client, chat
 
 st.set_page_config(page_title="劳动法智能助手", page_icon="⚖️", layout="wide")
+auth.require_password()   # 公网访问口令门（设了 APP_PASSWORD 才生效）
 
 
 # ===== 历史记录数据库 =====

@@ -38,6 +38,11 @@ WORKDIR = "./lightrag_store"        # 知识图谱数据
 CORPUS_PATH = "labor_law.txt"       # 法规语料（引用核验也读它）
 DB_PATH = "./chat_history.db"       # 对话历史
 
+# ===== 前端访问口令（law_app / law_app_v2 用）=====
+# 部署到公网后，没口令任何人都能用、刷爆 API 额度。设了 APP_PASSWORD 就要先输口令才能进。
+# 留空则不校验（本地开发方便）。生产环境务必设置！
+APP_PASSWORD = _get("APP_PASSWORD")
+
 # ===== 接口安全（law_api.py 用）=====
 # 调接口要带 X-API-Token 头，值=这里。没配则默认放行（方便本地调试）
 LAW_API_TOKEN = _get("LAW_API_TOKEN")

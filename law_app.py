@@ -12,10 +12,12 @@ import streamlit as st
 
 import config
 import citation_check
+import auth
 from llm_utils import make_rag
 
 # ===== 页面设置 =====
 st.set_page_config(page_title="劳动法智能助手", page_icon="⚖️", layout="centered")
+auth.require_password()   # 公网访问口令门（设了 APP_PASSWORD 才生效）
 st.title("⚖️ 劳动法智能助手")
 st.caption("基于知识图谱(LightRAG) + DeepSeek，能跨多条法规综合解答你的劳动权益问题")
 

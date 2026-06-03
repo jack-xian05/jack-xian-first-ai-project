@@ -96,6 +96,14 @@ streamlit run law_app_v2.py
 
 ---
 
+## ☁️ 部署上线
+
+已部署在阿里云 ECS，架构 `公网 → nginx(80/443, HTTPS) → streamlit(127.0.0.1:8501)`，systemd 保活、崩溃自重启。前端用访问口令（`APP_PASSWORD`）防止公网刷爆 API 额度。
+
+完整步骤见 [deploy/DEPLOY.md](deploy/DEPLOY.md)，配置文件在 `deploy/`（systemd 单元 + nginx 反代）。
+
+---
+
 ## 📂 项目结构
 
 ```
@@ -106,9 +114,14 @@ streamlit run law_app_v2.py
 ├── config.py         # 集中配置（Key / 模型 / 路径 / 限制，改一处全局生效）
 ├── llm_utils.py      # 公共 LLM/Embedding 模块（含指数退避重试）
 ├── citation_check.py # 法条引用核验（防幻觉）
+├── auth.py           # Streamlit 访问口令门（公网防刷额度）
 ├── eval/
 │   ├── eval_set.json # 20 题评估集（含应引用法条 + 关键点）
 │   └── run_eval.py   # 评测脚本（算召回率 / 幻觉率）
+├── deploy/           # 阿里云 ECS 部署：systemd + nginx + HTTPS
+│   ├── DEPLOY.md     # 手把手部署指南
+│   ├── law-app.service       # systemd 常驻配置
+│   └── nginx-law-app.conf    # nginx 反代 + WebSocket 配置
 ├── labor_law.txt     # 劳动法规知识库（语料）
 ├── lightrag_store/   # 已构建的知识图谱数据（图谱 + 向量）
 ├── requirements.txt  # 依赖

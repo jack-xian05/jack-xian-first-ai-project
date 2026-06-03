@@ -1,0 +1,35 @@
+# systemd 服务单元 —— 让 streamlit 在 ECS 上常驻、开机自启、崩溃自动重启。
+#
+# 部署步骤（在 ECS 上，root 或 sudo）：
+#   1. 改下面的 User / WorkingDirectory / ExecStart 路径为你的真实路径
+#   2. sudo cp deploy/law-app.service /etc/systemd/system/law-app.service
+#   3. sudo systemctl daemon-reload
+#   4. sudo systemctl enable law-app     # 开机自启
+#   5. sudo systemctl start law-app      # 立即启动
+#   6. sudo systemctl status law-app     # 看是否 running
+#   7. journalctl -u law-app -f          # 看实时日志
+#
+# 关键：--server.address 127.0.0.1 让 streamlit 只监听本机，
+#       外部访问统一走 nginx（更安全；安全组 8501 端口可以不对公网开放）。
+
+[Unit]
+Description=Labor Law Assistant (Streamlit)
+After=network.target
+
+[Service]
+Type=simple
+# ↓↓↓ 改成你的 ECS 用户名（如 root 或 ecs-user）
+User=root
+# ↓↓↓ 改成项目实际所在目录
+WorkingDirectory=/root/ai-test
+# ↓↓↓ 用虚拟环境里的 streamlit，绑定到本机 127.0.0.1，由 nginx 转发
+ExecStart=/root/ai-test/.venv/bin/streamlit run law_app_v2.py \
+    --server.port 8501 \
+    --server.address 127.0.0.1 \
+    --server.headless true
+# 崩溃自动重启
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
