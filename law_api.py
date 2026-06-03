@@ -36,7 +36,7 @@ WORKDIR = "./lightrag_store"
 # ===== 模型函数(和 law_app.py 一模一样)=====
 async def llm_func(prompt, system_prompt=None, history_messages=[], **kwargs):
     return await openai_complete_if_cache(
-        "deepseek-ai/DeepSeek-V3.1", prompt, system_prompt=system_prompt,
+        "deepseek-ai/DeepSeek-V4-Flash", prompt, system_prompt=system_prompt,
         history_messages=history_messages, api_key=KEY, base_url=BASE, **kwargs,
     )
 

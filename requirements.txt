@@ -6,3 +6,9 @@ python-dotenv
 fastapi
 uvicorn
 pdfplumber
+langchain
+langchain-community
+langchain-openai
+langchain-text-splitters
+chromadb
+tavily-python
