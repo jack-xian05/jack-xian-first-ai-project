@@ -1,71 +1,37 @@
 """
-劳动法智能助手 —— 网页版（可部署）
-技术栈：Streamlit + LightRAG(知识图谱RAG) + DeepSeek-V3
-特点：图谱检索能跨多条法规综合回答 / 引用法条 / 防幻觉 / 聊天式交互
+劳动法智能助手 —— 网页版（基础版：仅智能问答）
+技术栈：Streamlit + LightRAG(知识图谱RAG) + DeepSeek-V4-Flash
+完整版(含合同分析/图片识别/历史)见 law_app_v2.py
 
 本地运行：  py -m streamlit run law_app.py
-部署：      推到GitHub后用 Streamlit Community Cloud 一键部署
 """
 import os
 os.environ["EMBEDDING_USE_BASE64"] = "false"
 import asyncio
-import numpy as np
 import streamlit as st
-from dotenv import load_dotenv
-from openai import AsyncOpenAI
-from lightrag import LightRAG, QueryParam
-from lightrag.llm.openai import openai_complete_if_cache
-from lightrag.utils import EmbeddingFunc
-from lightrag.kg.shared_storage import initialize_pipeline_status
 
-# ===== 配置 =====
-# 本地：从 .env 文件读；部署到 Streamlit Cloud：从网页后台的 secrets 读
-load_dotenv()                                 # 本地：把 .env 里的值加载进来
-try:
-    KEY = st.secrets["SILICONFLOW_KEY"]       # 部署时优先从 Streamlit secrets 读
-except Exception:
-    KEY = os.getenv("SILICONFLOW_KEY")        # 本地从 .env 读，代码里不再出现真 Key
-BASE = "https://api.siliconflow.com/v1"
-WORKDIR = "./lightrag_store"
+import config
+import citation_check
+from llm_utils import make_rag
 
 # ===== 页面设置 =====
 st.set_page_config(page_title="劳动法智能助手", page_icon="⚖️", layout="centered")
 st.title("⚖️ 劳动法智能助手")
 st.caption("基于知识图谱(LightRAG) + DeepSeek，能跨多条法规综合解答你的劳动权益问题")
 
-# ===== 模型函数 =====
-async def llm_func(prompt, system_prompt=None, history_messages=[], **kwargs):
-    return await openai_complete_if_cache(
-        "deepseek-ai/DeepSeek-V4-Flash", prompt, system_prompt=system_prompt,  # 推理模型，更快；已验证兼容LightRAG的response_format
-        history_messages=history_messages, api_key=KEY, base_url=BASE, **kwargs,
-    )
-
-_embed_client = AsyncOpenAI(api_key=KEY, base_url=BASE)
-async def embed_func(texts):
-    resp = await _embed_client.embeddings.create(
-        model="Qwen/Qwen3-Embedding-0.6B", input=texts, encoding_format="float",
-    )
-    return np.array([d.embedding for d in resp.data], dtype=np.float32)
 
 # ===== 加载知识图谱（缓存，只加载一次）=====
-# 关键：用一个【持久化的事件循环】，初始化和查询都跑在它上面。
+# 用一个【持久化事件循环】，初始化和查询都跑在它上面，
 # 否则 Streamlit 每次重跑新建循环，会和图谱内部的锁冲突（different event loop 错误）
 @st.cache_resource
 def load_loop_and_rag():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    async def _init():
-        rag = LightRAG(
-            working_dir=WORKDIR, llm_model_func=llm_func,
-            embedding_func=EmbeddingFunc(embedding_dim=1024, max_token_size=8192, func=embed_func),
-        )
-        await rag.initialize_storages()
-        await initialize_pipeline_status()
-        return rag
-    rag = loop.run_until_complete(_init())
+    rag = loop.run_until_complete(make_rag())
     return loop, rag
 
-if not os.path.exists(WORKDIR):
+
+if not os.path.exists(config.WORKDIR):
     st.error("⚠️ 知识图谱尚未构建，请先在本地运行 `py build_graph.py`")
     st.stop()
 
@@ -94,23 +60,31 @@ for m in st.session_state.messages:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
 
+
 # ===== 处理提问 =====
 def answer(question):
+    question = question[:config.MAX_QUESTION_LEN]  # 限长，防超长输入烧 token
     st.session_state.messages.append({"role": "user", "content": question})
     with st.chat_message("user"):
         st.markdown(question)
     with st.chat_message("assistant"):
         with st.spinner("正在查阅法规并综合分析..."):
-            resp = loop.run_until_complete(rag.aquery(question, param=QueryParam(mode="hybrid")))
+            from lightrag import QueryParam
+            try:
+                resp = loop.run_until_complete(rag.aquery(question, param=QueryParam(mode="hybrid")))
+            except Exception as e:
+                resp = f"抱歉，查询出错了：{e}\n\n请稍后重试。"
         st.markdown(resp)
+        # 引用核验：标出回答里引用的法条哪些可信、哪些可能编造
+        note = citation_check.format_note(resp)
+        if note:
+            st.caption(note)
         st.info("⚠️ 本回答由AI根据公开法条生成，仅供参考，不构成正式法律意见。具体问题请咨询执业律师或拨打12333。")
     st.session_state.messages.append({"role": "assistant", "content": resp})
 
-# 来自侧边栏示例按钮
-if "pending" in st.session_state:
-    q = st.session_state.pop("pending")
-    answer(q)
 
-# 来自输入框
+if "pending" in st.session_state:
+    answer(st.session_state.pop("pending"))
+
 if prompt := st.chat_input("输入你的劳动法问题..."):
     answer(prompt)

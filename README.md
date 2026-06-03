@@ -13,7 +13,8 @@
 - **📄 劳动合同分析**：上传劳动合同 PDF，自动提取文字并扫描违法条款 / 风险条款 / 缺失条款（pdfplumber 解析）
 - **🖼️ 图片识别分析**：上传工资条、合同截图、仲裁文书等图片，用多模态模型（Qwen2.5-VL）识别内容并从劳动法角度解读
 - **💬 多轮对话 + 历史持久化**：聊天式界面，对话记录用 SQLite 本地存储，可随时切换 / 删除历史会话
-- **法条溯源 + 防幻觉**：回答标注具体法律依据，低温度 + 免责声明，减少编造
+- **🛡️ 法条引用核验（真·防幻觉）**：不止靠免责声明——从知识库建立"真实存在的法条"索引，对回答里引用的每条法条自动核验，**编造的法条号当场标红**
+- **📊 自动化评估**：内置 20 题评估集 + 评测脚本，可复现地给出关键点召回率、法条召回率、引用幻觉数
 
 ---
 
@@ -30,15 +31,24 @@ Streamlit Web 界面（多 Tab：问答 / 合同分析 / 图片识别）
    │      └── 向量检索 (Qwen3-Embedding, 1024维)
    │             │
    │             ▼
-   │      DeepSeek-V4-Flash 综合生成带法条依据的回答
+   │      DeepSeek-V3.1 综合生成 → 法条引用核验 → 带依据的回答
    │
-   ├── 合同分析 → pdfplumber 提取文字 → DeepSeek-V3 风险扫描
+   ├── 合同分析 → pdfplumber 提取文字 → DeepSeek-V4-Flash 风险扫描
    └── 图片识别 → Qwen2.5-VL-72B 多模态识别 + 劳动法解读
 ```
 
-**技术栈**：Python · LightRAG · Streamlit · DeepSeek-V4-Flash / Qwen2.5-VL（硅基流动 API）· Qwen3-Embedding · SQLite · pdfplumber
+**技术栈**：Python · LightRAG · Streamlit · FastAPI · DeepSeek-V3.1 / V4-Flash / Qwen2.5-VL（硅基流动 API）· Qwen3-Embedding · SQLite · pdfplumber
 
-> 说明：**建图谱用 DeepSeek-V3**（实体抽取要稳定输出，已构建一次存入 `lightrag_store/`，无需重建）；**查询生成用 DeepSeek-V4-Flash**（更快，且已验证兼容 LightRAG 所需的 response_format）。两个环节模型不同是有意为之。
+### 模型选型（按特长分工，实测得出）
+
+| 环节 | 模型 | 为什么选它 |
+|------|------|-----------|
+| 建知识图谱 | DeepSeek-V3 | 实体抽取要稳定按格式输出；已建好存盘无需重建 |
+| **知识图谱查询** | **DeepSeek-V3.1** | LightRAG 关键词抽取需要**结构化 response_format**，实测只有 V3/V3.1 支持，V4 系列会报 `response_format type unavailable` |
+| 合同分析（纯生成） | DeepSeek-V4-Flash | 不走 LightRAG、不需要 response_format，V4-Flash 响应更快 |
+| 图片识别 | Qwen2.5-VL-72B | 多模态视觉模型 |
+
+> 这个分工是真实踩坑后定的：一开始想全用更快的 V4-Flash，结果发现它不支持 LightRAG 的结构化输出（见下方踩坑记录 4），于是改为"图谱查询走 V3.1、纯生成走 V4-Flash"各取所长。
 
 ---
 
@@ -53,7 +63,13 @@ Streamlit Web 界面（多 Tab：问答 / 合同分析 / 图片识别）
    Streamlit 每次交互重跑脚本，`asyncio.run()` 反复新建事件循环，而 LightRAG 内部锁绑定到首次初始化的循环上，引发 "bound to a different event loop" 错误。解决方案：维护一个持久化事件循环，初始化与查询统一在该循环上执行。
 
 3. **推理模型的 max_tokens 陷阱**
-   换用 DeepSeek-V4-Flash 后发现回答时常空白或被截断。排查发现 V4 是**推理模型**，会先生成一大段思考（reasoning_content）再输出答案，原先较小的 `max_tokens` 被思考过程吃光。对比测试后确认：V4-Flash 比 V3.1 响应快约一倍，但需把 max_tokens 设足，否则正文没有预算。
+   引入 DeepSeek-V4-Flash 做合同分析时，回答时常空白或被截断。排查发现 V4 是**推理模型**，会先生成一大段思考（reasoning_content）再输出答案，原先较小的 `max_tokens` 被思考过程吃光。结论：用推理模型必须把 max_tokens 设足，否则正文没有预算。
+
+4. **V4 不支持 LightRAG 的结构化 response_format**
+   想把查询模型从 V3.1 升到更快的 V4-Flash，单测一个问题"通过"了，但跑评估集时大面积报错 `response_format type unavailable`。复盘发现：单测之所以"通过"是因为 LightRAG **缓存**了之前 V3.1 的关键词抽取结果，没真的调 V4。LightRAG 的关键词抽取依赖结构化 JSON 输出，实测只有 V3/V3.1 支持。**教训：验证要避开缓存、用未跑过的样本**——最终定为图谱查询用 V3.1、纯生成用 V4-Flash。
+
+5. **从"能跑"到"工程化"的重构**
+   初版把 `llm_func`/`embed_func` 在 4 个文件里复制粘贴、模型名硬编码、API 调用裸奔。重构为：`config.py` 集中配置、`llm_utils.py` 公共模块（含指数退避重试）、`law_api.py` 加接口鉴权与输入限长、新增法条引用核验与自动化评估。
 
 ---
 
@@ -85,8 +101,14 @@ streamlit run law_app_v2.py
 ```
 ├── law_app_v2.py     # 主应用（完整版：问答 + 合同分析 + 图片识别 + 历史）
 ├── law_app.py        # 基础版（仅智能问答，用于对比演示）
-├── law_api.py        # FastAPI 后端接口版（把 AI 能力包成 REST API）
+├── law_api.py        # FastAPI 后端接口（鉴权 + 限长 + 引用核验）
 ├── build_graph.py    # 构建知识图谱脚本（一次性，用 V3 抽取实体）
+├── config.py         # 集中配置（Key / 模型 / 路径 / 限制，改一处全局生效）
+├── llm_utils.py      # 公共 LLM/Embedding 模块（含指数退避重试）
+├── citation_check.py # 法条引用核验（防幻觉）
+├── eval/
+│   ├── eval_set.json # 20 题评估集（含应引用法条 + 关键点）
+│   └── run_eval.py   # 评测脚本（算召回率 / 幻觉率）
 ├── labor_law.txt     # 劳动法规知识库（语料）
 ├── lightrag_store/   # 已构建的知识图谱数据（图谱 + 向量）
 ├── requirements.txt  # 依赖
@@ -96,9 +118,36 @@ streamlit run law_app_v2.py
 
 ---
 
+## 📊 质量评估
+
+法律问答正确性是生命线，因此内置可复现的自动化评估：
+
+```bash
+py eval/run_eval.py        # 跑全部 20 题
+py eval/run_eval.py 5      # 只跑前 5 题（快速验证）
+```
+
+评估三个指标：**关键点召回率**（标准答案要点覆盖度）、**法条召回率**（应引用法条的命中率）、**引用幻觉数**（编造的法条数，理想为 0）。
+
+**当前实测结果**（20 题，知识图谱查询走 DeepSeek-V3.1）：
+
+| 指标 | 数值 |
+|------|------|
+| 关键点平均召回率 | **87.9%** |
+| 法条平均召回率 | **65.0%** |
+| 引用幻觉总数 | **0** ✅ |
+
+> 解读：**0 幻觉**说明"RAG 接地 + 引用核验"的防幻觉设计有效，没有编造法条。**法条召回率 65%** 是当前主要短板——回答常给对要点但未必显式引用具体条号，这也是下一步要优化的方向（在提示词里强制要求标注条号）。
+>
+> 注：评估过程顶部出现过几次 `Connection Error`，被指数退避重试自动救回，20 题全部完成——侧面验证了重试机制有效。
+
+---
+
 ## 📈 后续可优化方向
 
+- **提升法条引用召回率**（当前 65%）：在提示词中强制要求标注具体条号
 - 流式输出（提升响应体感）
 - 简单问题走普通 RAG、复杂问题走图谱的智能分流
 - 接入更完整的法规库与司法解释
 - 扫描版 PDF 合同接入 OCR（目前扫描件需走「图片识别」Tab）
+- 评估接入 LLM-as-judge，覆盖"解释是否准确"（现有指标只验证关键点/条号是否出现）

@@ -1,40 +1,28 @@
 """
-劳动法智能助手 v2
-新增：PDF合同分析 / 图片识别 / 对话历史持久化
+劳动法智能助手 v2（完整版）
+功能：智能问答(知识图谱) / PDF合同分析 / 图片识别 / 对话历史持久化
 运行：py -m streamlit run law_app_v2.py
 """
 import os
+os.environ["EMBEDDING_USE_BASE64"] = "false"
 import asyncio
 import sqlite3
 import base64
 from datetime import datetime
 
-os.environ["EMBEDDING_USE_BASE64"] = "false"
-
-import numpy as np
 import streamlit as st
-from dotenv import load_dotenv
-from openai import AsyncOpenAI, OpenAI
-from lightrag import LightRAG, QueryParam
-from lightrag.llm.openai import openai_complete_if_cache
-from lightrag.utils import EmbeddingFunc
-from lightrag.kg.shared_storage import initialize_pipeline_status
+from lightrag import QueryParam
 
-load_dotenv()
-try:
-    KEY = st.secrets["SILICONFLOW_KEY"]
-except Exception:
-    KEY = os.getenv("SILICONFLOW_KEY")
-
-BASE = "https://api.siliconflow.com/v1"
-WORKDIR = "./lightrag_store"
-DB_PATH = "./chat_history.db"
+import config
+import citation_check
+from llm_utils import make_rag, sync_client, chat
 
 st.set_page_config(page_title="劳动法智能助手", page_icon="⚖️", layout="wide")
 
+
 # ===== 历史记录数据库 =====
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH)
     conn.execute("""CREATE TABLE IF NOT EXISTS conversations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT DEFAULT '新对话',
@@ -50,8 +38,9 @@ def init_db():
     conn.commit()
     conn.close()
 
+
 def new_conversation():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH)
     cur = conn.execute(
         "INSERT INTO conversations (created_at) VALUES (?)",
         (datetime.now().strftime("%m-%d %H:%M"),)
@@ -61,8 +50,9 @@ def new_conversation():
     conn.close()
     return conv_id
 
+
 def save_message(conv_id, role, content):
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH)
     conn.execute(
         "INSERT INTO messages (conv_id, role, content, created_at) VALUES (?, ?, ?, ?)",
         (conv_id, role, content, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
@@ -76,16 +66,18 @@ def save_message(conv_id, role, content):
     conn.commit()
     conn.close()
 
+
 def load_conversations():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH)
     rows = conn.execute(
         "SELECT id, title, created_at FROM conversations ORDER BY id DESC LIMIT 30"
     ).fetchall()
     conn.close()
     return rows
 
+
 def load_messages(conv_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH)
     rows = conn.execute(
         "SELECT role, content FROM messages WHERE conv_id=? ORDER BY id",
         (conv_id,)
@@ -93,54 +85,32 @@ def load_messages(conv_id):
     conn.close()
     return [{"role": r, "content": c} for r, c in rows]
 
+
 def delete_conversation(conv_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH)
     conn.execute("DELETE FROM messages WHERE conv_id=?", (conv_id,))
     conn.execute("DELETE FROM conversations WHERE id=?", (conv_id,))
     conn.commit()
     conn.close()
 
+
 init_db()
 
-# ===== LightRAG 模型 =====
-async def llm_func(prompt, system_prompt=None, history_messages=[], **kwargs):
-    return await openai_complete_if_cache(
-        "deepseek-ai/DeepSeek-V4-Flash", prompt,
-        system_prompt=system_prompt,
-        history_messages=history_messages,
-        api_key=KEY, base_url=BASE, **kwargs,
-    )
 
-_embed_client = AsyncOpenAI(api_key=KEY, base_url=BASE)
-
-async def embed_func(texts):
-    resp = await _embed_client.embeddings.create(
-        model="Qwen/Qwen3-Embedding-0.6B", input=texts, encoding_format="float",
-    )
-    return np.array([d.embedding for d in resp.data], dtype=np.float32)
-
+# ===== 加载知识图谱（持久化事件循环，缓存）=====
 @st.cache_resource
 def load_loop_and_rag():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    async def _init():
-        rag = LightRAG(
-            working_dir=WORKDIR, llm_model_func=llm_func,
-            embedding_func=EmbeddingFunc(
-                embedding_dim=1024, max_token_size=8192, func=embed_func
-            ),
-        )
-        await rag.initialize_storages()
-        await initialize_pipeline_status()
-        return rag
-    return loop, loop.run_until_complete(_init())
+    rag = loop.run_until_complete(make_rag())
+    return loop, rag
 
-if not os.path.exists(WORKDIR):
+
+if not os.path.exists(config.WORKDIR):
     st.error("⚠️ 知识图谱尚未构建，请先运行 `py build_graph.py`")
     st.stop()
 
 loop, rag = load_loop_and_rag()
-sync_client = OpenAI(api_key=KEY, base_url=BASE)
 
 # ===== 侧边栏：对话历史 =====
 with st.sidebar:
@@ -203,16 +173,23 @@ with tab1:
             st.markdown(m["content"])
 
     def answer(question):
+        question = question[:config.MAX_QUESTION_LEN]  # 限长
         save_message(st.session_state.conv_id, "user", question)
         st.session_state.messages.append({"role": "user", "content": question})
         with st.chat_message("user"):
             st.markdown(question)
         with st.chat_message("assistant"):
             with st.spinner("正在查阅法规并综合分析..."):
-                resp = loop.run_until_complete(
-                    rag.aquery(question, param=QueryParam(mode="hybrid"))
-                )
+                try:
+                    resp = loop.run_until_complete(
+                        rag.aquery(question, param=QueryParam(mode="hybrid"))
+                    )
+                except Exception as e:
+                    resp = f"抱歉，查询出错了：{e}\n\n请稍后重试。"
             st.markdown(resp)
+            note = citation_check.format_note(resp)   # 引用核验
+            if note:
+                st.caption(note)
             st.info("⚠️ 仅供参考，不构成法律意见。具体问题请咨询律师或拨打 12333。")
         save_message(st.session_state.conv_id, "assistant", resp)
         st.session_state.messages.append({"role": "assistant", "content": resp})
@@ -252,7 +229,7 @@ with tab2:
                 )
 
                 if st.button("开始分析", type="primary", key="analyze_pdf"):
-                    text_chunk = contract_text[:4000]
+                    text_chunk = contract_text[:config.MAX_CONTRACT_LEN]
                     prompts = {
                         "全面风险扫描": f"""你是一位专业劳动法律师，请全面分析以下劳动合同：
 
@@ -276,15 +253,16 @@ with tab2:
                     }
 
                     with st.spinner("正在分析合同，请稍候..."):
-                        resp = sync_client.chat.completions.create(
-                            model="deepseek-ai/DeepSeek-V3",
-                            messages=[{"role": "user", "content": prompts[analysis_type]}],
-                            temperature=0
-                        )
-                        analysis = resp.choices[0].message.content
+                        try:
+                            analysis = chat(prompts[analysis_type], temperature=0)
+                        except Exception as e:
+                            analysis = f"分析失败：{e}\n\n请稍后重试。"
 
                     st.markdown("### 📋 分析结果")
                     st.markdown(analysis)
+                    note = citation_check.format_note(analysis)  # 核验合同分析里的法条引用
+                    if note:
+                        st.caption(note)
                     st.warning("⚠️ 以上分析由 AI 生成，仅供参考，不构成正式法律意见。")
 
         except ImportError:
@@ -319,7 +297,7 @@ with tab3:
 
                 try:
                     resp = sync_client.chat.completions.create(
-                        model="Qwen/Qwen2.5-VL-72B-Instruct",
+                        model=config.VL_MODEL,
                         messages=[{
                             "role": "user",
                             "content": [

@@ -1,91 +1,79 @@
 """
-FastAPI 实战 —— 把劳动法 AI 包成后端接口
-核心学习点：真实公司里，AI 逻辑就是这样被包成 API，供前端 / App / 其他服务调用。
+FastAPI 实战 —— 把劳动法 AI 包成后端接口（给程序调用，返回 JSON）。
 
-对比 law_app.py(Streamlit)：
-  - Streamlit：又当前端又当后端，一个文件给【人】看
-  - 这里(FastAPI)：纯后端，只返回 JSON 数据，给【程序】调用
+对比 law_app.py(Streamlit)：那个又当前端又当后端给【人】看；这里纯后端给【程序】调。
+FastAPI 原生 async，不需要 Streamlit 那套持久化事件循环 hack。
 
-一个隐藏亮点：
-  law_app.py 里你踩过"事件循环冲突"的坑，写了一套持久化 loop 的 hack。
-  FastAPI 原生就是 async 的，这里【完全不需要】那套 hack —— 这正是
-  后端框架天生比 Streamlit 适合做 AI 服务的原因之一。
+生产化加固：
+  - 鉴权：调 /ask 要带 X-API-Token 头（值在 .env 的 LAW_API_TOKEN），防止接口被盗刷烧额度
+  - 限长：超长问题直接拒，防止超大输入烧 token
+  - 引用核验：返回里标出回答引用的法条哪些可信、哪些可能编造
+  - 错误处理：查询异常返回 503 而不是 500 堆栈
 
 运行：  py -m uvicorn law_api:app --reload --port 8001
 测试：  浏览器打开 http://127.0.0.1:8001/docs
 """
 import os
 os.environ["EMBEDDING_USE_BASE64"] = "false"
-import numpy as np
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from pydantic import BaseModel
-from dotenv import load_dotenv
-from openai import AsyncOpenAI
-from lightrag import LightRAG, QueryParam
-from lightrag.llm.openai import openai_complete_if_cache
-from lightrag.utils import EmbeddingFunc
-from lightrag.kg.shared_storage import initialize_pipeline_status
+from fastapi import FastAPI, Header, HTTPException
+from pydantic import BaseModel, Field
 
-# ===== 配置：从 .env 读 Key，代码里不出现真 Key =====
-load_dotenv()
-KEY = os.getenv("SILICONFLOW_KEY")
-BASE = "https://api.siliconflow.com/v1"
-WORKDIR = "./lightrag_store"
+import config
+import citation_check
+from llm_utils import make_rag
+from lightrag import QueryParam
 
-# ===== 模型函数(和 law_app.py 一模一样)=====
-async def llm_func(prompt, system_prompt=None, history_messages=[], **kwargs):
-    return await openai_complete_if_cache(
-        "deepseek-ai/DeepSeek-V4-Flash", prompt, system_prompt=system_prompt,
-        history_messages=history_messages, api_key=KEY, base_url=BASE, **kwargs,
-    )
-
-_embed_client = AsyncOpenAI(api_key=KEY, base_url=BASE)
-async def embed_func(texts):
-    resp = await _embed_client.embeddings.create(
-        model="Qwen/Qwen3-Embedding-0.6B", input=texts, encoding_format="float",
-    )
-    return np.array([d.embedding for d in resp.data], dtype=np.float32)
-
-# ===== 全局变量：知识图谱(启动时加载一次，所有请求共用)=====
+# ===== 全局：知识图谱（启动时加载一次，所有请求共用）=====
 rag = None
 
-# ===== lifespan：服务【启动时】跑一次，加载知识图谱 =====
-# 关键：模型/知识库只在启动时加载一次，不是每次请求都加载(那样会很慢)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global rag
     print("⏳ 正在加载劳动法知识图谱...")
-    rag = LightRAG(
-        working_dir=WORKDIR, llm_model_func=llm_func,
-        embedding_func=EmbeddingFunc(embedding_dim=1024, max_token_size=8192, func=embed_func),
-    )
-    await rag.initialize_storages()
-    await initialize_pipeline_status()
+    rag = await make_rag()
     print("✅ 知识图谱就绪，接口可以用了")
-    yield   # ← yield 之前是"启动时"，之后是"关闭时"
+    yield
     print("👋 服务关闭")
+
 
 app = FastAPI(title="劳动法 AI 接口", lifespan=lifespan)
 
-# ===== 请求体的"格式定义"(Pydantic)=====
-# 这是 FastAPI 又一个香的地方：定义好格式，它自动校验+自动生成文档
+
+# ===== 鉴权依赖 =====
+def check_token(x_api_token: str = Header(default="")):
+    """校验请求头里的 X-API-Token。未配置 LAW_API_TOKEN 时放行（方便本地调试）。"""
+    if config.LAW_API_TOKEN and x_api_token != config.LAW_API_TOKEN:
+        raise HTTPException(status_code=401, detail="无效的 API Token")
+
+
+# ===== 请求体 =====
 class Question(BaseModel):
-    question: str   # 调用方必须传一个字符串字段 question
+    question: str = Field(..., min_length=1, max_length=config.MAX_QUESTION_LEN,
+                          description=f"劳动法问题，最长 {config.MAX_QUESTION_LEN} 字")
+
 
 # ===== 核心接口：POST /ask =====
-# 和 fastapi_hello 的区别：那个是 GET(参数放URL)，这个是 POST(参数放请求体)
-# 规律：查东西用 GET，提交数据用 POST。问问题算"提交"，所以用 POST。
 @app.post("/ask")
-async def ask(q: Question):
-    answer = await rag.aquery(q.question, param=QueryParam(mode="hybrid"))
+async def ask(q: Question, x_api_token: str = Header(default="")):
+    check_token(x_api_token)
+    try:
+        answer = await rag.aquery(q.question, param=QueryParam(mode="hybrid"))
+    except Exception as e:
+        # 上游 API 抖动/超时等，返回 503 让调用方知道是"暂时不可用"，而非代码 bug
+        raise HTTPException(status_code=503, detail=f"AI 服务暂时不可用：{e}")
+
+    verified, unverified = citation_check.verify(answer)
     return {
         "question": q.question,
         "answer": answer,
+        "citations": {"verified": verified, "unverified": unverified},
         "disclaimer": "本回答由AI根据公开法条生成，仅供参考，不构成正式法律意见。",
     }
 
-# ===== 健康检查接口(生产项目标配，让运维知道服务还活着)=====
+
+# ===== 健康检查（生产标配，让运维知道服务还活着）=====
 @app.get("/health")
 def health():
     return {"status": "ok", "rag_loaded": rag is not None}
