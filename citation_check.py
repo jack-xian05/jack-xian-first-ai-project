@@ -11,8 +11,15 @@
 import re
 import config
 
-# 匹配 "《某某法》第X条"，X 为中文数字
+# 匹配 "《某某法》第X条"，X 为中文数字（用于从模型回答里抽取引用）
 _CITATION = re.compile(r'《([^》]+?)》第([一二三四五六七八九十百零两]+)条')
+
+# 建索引专用：额外识别"《法》第X条、第Y条、第Z条"这种同一部法连写多条的枚举。
+# 只认紧跟在《法》第X条之后、用顿号或"和"连接的条号，保持严格、不会把无关条号误纳入。
+_CITATION_ENUM = re.compile(
+    r'《([^》]+?)》第([一二三四五六七八九十百零两]+)条((?:[、和]第[一二三四五六七八九十百零两]+条)*)'
+)
+_ARTICLE = re.compile(r'第([一二三四五六七八九十百零两]+)条')
 
 
 def _normalize_law(name: str) -> str:
@@ -33,8 +40,12 @@ def build_index(corpus_paths=None) -> set:
             continue
         with open(path, "r", encoding="utf-8") as f:
             text = f.read()
-        for law, article in _CITATION.findall(text):
-            index.add((_normalize_law(law), article))
+        # 枚举感知：先取锚点 "《法》第X条"，再把其后连写的 "、第Y条" 也归到同一部法
+        for law, first, trailing in _CITATION_ENUM.findall(text):
+            norm = _normalize_law(law)
+            index.add((norm, first))
+            for art in _ARTICLE.findall(trailing):
+                index.add((norm, art))
     return index
 
 
