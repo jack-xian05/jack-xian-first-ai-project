@@ -89,6 +89,30 @@ def chat(prompt, model=None, temperature=0, max_tokens=2500, messages=None):
     return resp.choices[0].message.content
 
 
+async def rerank_func(query, documents, top_n=None, **kwargs):
+    """硅基流动 rerank API：对检索到的 chunk 精排。
+    返回 LightRAG 要求的索引格式 [{"index": i, "relevance_score": s}, ...]。
+    LightRAG 调用处包了 try/except，本函数抛错会自动降级用原始检索结果。"""
+    if not documents:
+        return []
+    import httpx
+    payload = {"model": config.RERANK_MODEL, "query": query, "documents": documents}
+    if top_n:
+        payload["top_n"] = top_n
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            f"{config.BASE_URL}/rerank",
+            headers={"Authorization": f"Bearer {config.SILICONFLOW_KEY}"},
+            json=payload,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    return [
+        {"index": r["index"], "relevance_score": r["relevance_score"]}
+        for r in data["results"]
+    ]
+
+
 def make_embedding_func():
     """给 LightRAG 用的 EmbeddingFunc 包装"""
     from lightrag.utils import EmbeddingFunc
@@ -104,6 +128,7 @@ async def make_rag():
         working_dir=config.WORKDIR,
         llm_model_func=llm_func,
         embedding_func=make_embedding_func(),
+        rerank_model_func=rerank_func,   # 接入硅基流动重排，消除"未配置 rerank"告警
     )
     await rag.initialize_storages()
     await initialize_pipeline_status()

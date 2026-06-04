@@ -2,10 +2,13 @@
 往已有知识图谱里【增量插入】补充法规(labor_law_extra.txt)。
 和 build_graph.py 一样用 BUILD_MODEL(V3) 抽实体，复用 llm_utils 公共模块，不再重复造轮子。
 
-运行：py add_docs.py
+运行：py add_docs.py [文件名]
+  不带参数默认插入 labor_law_extra.txt；
+  也可指定：py add_docs.py labor_law_extra2.txt
 """
 import os
 os.environ["EMBEDDING_USE_BASE64"] = "false"
+import sys
 import asyncio
 from lightrag import LightRAG
 from lightrag.llm.openai import openai_complete_if_cache
@@ -14,7 +17,8 @@ from lightrag.kg.shared_storage import initialize_pipeline_status
 import config
 from llm_utils import make_embedding_func
 
-EXTRA_CORPUS = "labor_law_extra.txt"
+# 支持命令行指定要插入的语料文件，默认 labor_law_extra.txt
+EXTRA_CORPUS = sys.argv[1] if len(sys.argv) > 1 else "labor_law_extra.txt"
 
 
 # 增量建图同样用 BUILD_MODEL(V3)，与 build_graph.py 保持一致

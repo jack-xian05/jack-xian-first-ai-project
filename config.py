@@ -32,12 +32,14 @@ GEN_MODEL = "deepseek-ai/DeepSeek-V4-Flash"
 EMBED_MODEL = "Qwen/Qwen3-Embedding-0.6B"
 EMBED_DIM = 1024
 VL_MODEL = "Qwen/Qwen2.5-VL-72B-Instruct"   # 多模态：图片识别
+# 重排序：检索后对 chunk 精排，提升相关性排序（召回→重排→生成 链路的"重排"环节）
+RERANK_MODEL = "Qwen/Qwen3-Reranker-8B"
 
 # ===== 路径 =====
 WORKDIR = "./lightrag_store"        # 知识图谱数据
 CORPUS_PATH = "labor_law.txt"       # 主语料（建图用）
 # 引用核验读取的全部语料（含补充法规），缺失的会自动跳过
-CORPUS_FILES = ["labor_law.txt", "labor_law_extra.txt"]
+CORPUS_FILES = ["labor_law.txt", "labor_law_extra.txt", "labor_law_extra2.txt"]
 DB_PATH = "./chat_history.db"       # 对话历史
 
 # ===== 前后端分离：前端(law_app.py)调后端(law_api.py)的地址 =====
