@@ -25,6 +25,14 @@ _ARTICLE = re.compile(r'第([一二三四五六七八九十百零两]+)条')
 # 有了它，就能把该法正文里裸写的"第X条"全部登记成 (该法, X)，而不必依赖《法》第X条这种交叉引用。
 _LAW_HEADER = re.compile(r'^【法规名称】\s*(.+?)\s*$')
 
+# ===== 精确查表（条号→原文）专用 =====
+# 行首条号：把整条原文从全文里切出来。必须锚定行首(^)，否则正文里"依据第X条"这种
+# 交叉引用会被误当成新条开头、把原文切碎。
+_ARTICLE_HEAD = re.compile(r'^第([一二三四五六七八九十百零两]+)条')
+# 章/节标题与目录：作条文分隔符（遇到就结束上一条，自身不是条文内容）
+_CHAPTER_HEAD = re.compile(r'^(?:第[一二三四五六七八九十百零两]+[章节]|目\s*录)')
+NPC_DIR = "npc_laws"   # crawl_npc.py 落地的官方法规全文目录（逐条原文，带【来源】溯源）
+
 
 def _normalize_law(name: str) -> str:
     """法律名归一化：去掉'中华人民共和国'前缀，便于匹配"""
@@ -90,6 +98,65 @@ def verify(answer: str):
     return verified, unverified
 
 
+# ===== 精确查表：条号 → 条文原文 =====
+# 与上面的"存在性索引"分工：存在性索引防幻觉(判条号真假)，精确表回填权威原文(保内容准确)。
+# 为什么要它：语义检索定位到法条后，让模型转述条文仍可能说错；直接查表返回立法原文，零转述误差。
+# 数据源是 npc_laws/ 官方全文，逐条切分。
+def build_article_index(npc_dir: str = None) -> dict:
+    """把官方全文逐条切成完整原文，建 {(法名归一化, 条号中文数字): 原文} 字典。"""
+    import os, glob
+    npc_dir = npc_dir or NPC_DIR
+    index = {}
+    if not os.path.isdir(npc_dir):
+        return index
+    for path in sorted(glob.glob(os.path.join(npc_dir, "*.txt"))):
+        law, cur, buf = None, None, []
+
+        def flush():
+            nonlocal cur, buf
+            if law and cur and buf:
+                index.setdefault((law, cur), "".join(buf).strip())  # 同条号保留首现(正文优先于零散引用)
+            cur, buf = None, []
+
+        with open(path, "r", encoding="utf-8") as f:
+            for raw in f:
+                s = raw.strip()
+                h = _LAW_HEADER.match(s)
+                if h:
+                    flush(); law = _normalize_law(h.group(1)); continue
+                if _CHAPTER_HEAD.match(s):
+                    flush(); continue                       # 章/节/目录:中断当前条
+                a = _ARTICLE_HEAD.match(s)
+                if a:
+                    flush(); cur, buf = a.group(1), [s]      # 新条开始
+                elif cur:
+                    buf.append("\n" + s)                     # 续行并入当前条
+            flush()
+    return index
+
+
+_ARTICLE_INDEX = None
+def _get_article_index():
+    global _ARTICLE_INDEX
+    if _ARTICLE_INDEX is None:
+        _ARTICLE_INDEX = build_article_index()
+    return _ARTICLE_INDEX
+
+
+def lookup_article(cite: str):
+    """输入 '《劳动合同法》第十九条'(或含'中华人民共和国'全称)，返回该条立法原文；查不到返回 None。"""
+    m = _CITATION.search(cite)
+    if m:
+        law, art = m.group(1), m.group(2)
+    else:  # 容错:宽松解析"法名 + 中文数字"
+        lm = re.search(r'([一-龥]+?(?:法|条例|规定|解释))', cite)
+        am = re.search(r'([一二三四五六七八九十百零两]+)', cite)
+        if not (lm and am):
+            return None
+        law, art = lm.group(1), am.group(1)
+    return _get_article_index().get((_normalize_law(law), art))
+
+
 def format_note(answer: str) -> str:
     """生成一段给用户看的核验说明（Markdown）"""
     verified, unverified = verify(answer)
@@ -114,3 +181,10 @@ if __name__ == "__main__":
     print("可疑：", u)
     print("---说明---")
     print(format_note(demo))
+
+    print("\n=== 精确查表（条号→原文）===")
+    aidx = build_article_index()
+    print(f"精确表收录 {len(aidx)} 条立法原文")
+    for q in ["《劳动合同法》第十九条", "《中华人民共和国劳动合同法》第三十九条", "《工伤保险条例》第十五条"]:
+        txt = lookup_article(q)
+        print(f"\n[{q}]\n{txt[:120] + '…' if txt else '（未收录）'}")

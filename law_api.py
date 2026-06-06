@@ -96,10 +96,15 @@ async def ask(request: Request, q: Question, x_api_token: str = Header(default="
         answer = "抱歉，暂时无法检索到相关法条，请换个问法重试。"
 
     verified, unverified = citation_check.verify(answer)
+    # 精确查表：给已核实的引用回填立法原文（条号→原文，不经模型转述，保证条文 100% 准确）。
+    # 只保留查到原文的，前端可据此展示"权威原文"，与模型的解释互为印证。
+    sources = [{"cite": c, "text": t}
+               for c in verified if (t := citation_check.lookup_article(c))]
     return {
         "question": q.question,
         "answer": answer,
         "citations": {"verified": verified, "unverified": unverified},
+        "sources": sources,
         "disclaimer": "本回答由AI根据公开法条生成，仅供参考，不构成正式法律意见。",
     }
 
