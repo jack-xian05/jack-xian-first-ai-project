@@ -16,7 +16,7 @@ from lightrag.kg.shared_storage import initialize_pipeline_status
 from dotenv import load_dotenv
 load_dotenv()
 KEY = os.getenv("SILICONFLOW_KEY")
-BASE = "https://api.siliconflow.com/v1"
+BASE = "https://api.siliconflow.cn/v1"
 WORKDIR = "./lightrag_store"
 
 async def llm_func(prompt, system_prompt=None, history_messages=[], **kwargs):

@@ -23,20 +23,49 @@ from lightrag import QueryParam
 EVAL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "eval_set.json")
 
 
+def _cite_key(cite: str):
+    """'《劳动合同法》第十九条' -> ('劳动合同法','十九')，解析失败返回 None。
+    归一化掉'中华人民共和国'前缀，这样模型写全称、评估集写简称也能对上。"""
+    m = citation_check._CITATION.search(cite)
+    return (citation_check._normalize_law(m.group(1)), m.group(2)) if m else None
+
+
+def _norm(s: str) -> str:
+    """关键点匹配归一化：'两'与'二'在中文数字里通用（两年=二年、两倍=二倍），统一成'二'再比，
+    避免'答案写两年、评估集写二年'被误判成漏掉要点。"""
+    return s.replace("两", "二")
+
+
 def score_case(answer: str, case: dict):
     """给单题打分，返回各项指标"""
+    ans_n = _norm(answer)
     kws = case["keywords"]
-    kw_hit = [k for k in kws if k in answer]
+    kw_hit = [k for k in kws if _norm(k) in ans_n]
+    kw_miss = [k for k in kws if _norm(k) not in ans_n]
     kw_recall = len(kw_hit) / len(kws) if kws else 1.0
 
+    # 法条召回：按 (法名归一化, 条号) 集合比对，而非裸子串。
+    # 否则模型写《中华人民共和国劳动合同法》第十九条、评估集写《劳动合同法》第十九条，
+    # 子串不连续会被误判成漏引（曾导致法条召回假性归零）。
     cites = case["citations"]
-    cite_hit = [c for c in cites if c in answer]
-    cite_recall = len(cite_hit) / len(cites) if cites else 1.0
+    ans_keys = {(citation_check._normalize_law(law), art)
+                for law, art in citation_check._CITATION.findall(answer)}
+    hit = lambda c: _cite_key(c) in ans_keys
+    if case.get("cite_any") and cites:
+        # 等价法条：列出的多条里任一命中即算（如《劳动法》第五十条 与《劳动合同法》第三十条
+        # 都讲"及时足额支付工资"，模型引其一即正确）。
+        ok = any(hit(c) for c in cites)
+        cite_recall = 1.0 if ok else 0.0
+        cite_miss = [] if ok else cites
+    else:
+        cite_hit = [c for c in cites if hit(c)]
+        cite_miss = [c for c in cites if not hit(c)]
+        cite_recall = len(cite_hit) / len(cites) if cites else 1.0
 
     _, unverified = citation_check.verify(answer)  # 编造的法条
     return {
-        "kw_recall": kw_recall, "kw_hit": kw_hit, "kw_miss": [k for k in kws if k not in answer],
-        "cite_recall": cite_recall, "cite_miss": [c for c in cites if c not in answer],
+        "kw_recall": kw_recall, "kw_hit": kw_hit, "kw_miss": kw_miss,
+        "cite_recall": cite_recall, "cite_miss": cite_miss,
         "hallucinated": unverified,
     }
 
@@ -54,7 +83,9 @@ async def main():
     kw_recalls, cite_recalls, total_halluc = [], [], 0
     for c in cases:
         try:
-            ans = await rag.aquery(c["question"], param=QueryParam(mode="hybrid"))
+            # 注入与 law_api 线上一致的引用指令，保证"评估即线上"
+            ans = await rag.aquery(c["question"],
+                                   param=QueryParam(mode="hybrid", user_prompt=config.CITATION_PROMPT))
         except Exception as e:
             ans = None
             print(f"⚠️ [{c['id']}] 查询异常：{e}")

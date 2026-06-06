@@ -1,0 +1,19 @@
+{
+  "_说明": "劳动法权威源种子清单。每部法规钉死官方URL，定向抓取。URL均为 .gov.cn 官方源，已逐个验证可抓且含法条正文（人社部 mohrss 站点有反爬，故改用 gov.cn / npc.gov.cn / court.gov.cn）。",
+  "laws": [
+    { "name": "中华人民共和国劳动法",                 "level": "法律",     "url": "http://www.npc.gov.cn/zgrdw/npc/xinwen/2019-01/07/content_2070261.htm" },
+    { "name": "中华人民共和国劳动合同法",             "level": "法律",     "url": "http://www.npc.gov.cn/npc/c1773/c2518/c12898/201905/t20190523_46320.html" },
+    { "name": "中华人民共和国劳动合同法实施条例",     "level": "行政法规", "url": "https://www.gov.cn/zwgk/2008-09/19/content_1099470.htm" },
+    { "name": "中华人民共和国社会保险法",             "level": "法律",     "url": "http://www.npc.gov.cn/zgrdw/npc/xinwen/2019-01/07/content_2070267.htm" },
+    { "name": "中华人民共和国劳动争议调解仲裁法",     "level": "法律",     "url": "https://www.gjxfj.gov.cn/gjxfj/xxgk/fgwj/flfg/webinfo/2016/03/1460585589964384.htm" },
+    { "name": "中华人民共和国就业促进法",             "level": "法律",     "url": "https://www.gov.cn/guoqing/2021-10/29/content_5647636.htm" },
+    { "name": "工伤保险条例",                         "level": "行政法规", "url": "https://fgk.chinatax.gov.cn/zcfgk/c100010/c5194427/content.html" },
+    { "name": "职工带薪年休假条例",                   "level": "行政法规", "url": "https://www.gov.cn/flfg/2007-12/16/content_835527.htm" },
+    { "name": "女职工劳动保护特别规定",               "level": "行政法规", "url": "https://www.gov.cn/zhengce/2012-05/07/content_2602602.htm" },
+    { "name": "劳动保障监察条例",                     "level": "行政法规", "url": "https://www.gov.cn/gongbao/content/2004/content_63042.htm" },
+    { "name": "工资支付暂行规定",                     "level": "部门规章", "url": "https://www.gov.cn/zhengce/2022-08/31/content_5711284.htm" },
+    { "name": "最低工资规定",                         "level": "部门规章", "url": "https://www.gov.cn/zhengce/2022-08/31/content_5711292.htm" },
+    { "name": "劳务派遣暂行规定",                     "level": "部门规章", "url": "https://www.gov.cn/gongbao/content/2014/content_2667613.htm" },
+    { "name": "最高人民法院关于审理劳动争议案件适用法律问题的解释（一）", "level": "司法解释", "url": "https://www.court.gov.cn/fabu/xiangqing/282121.html" }
+  ]
+}

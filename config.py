@@ -19,7 +19,7 @@ def _get(name: str, default: str = "") -> str:
     return os.getenv(name, default)
 
 SILICONFLOW_KEY = _get("SILICONFLOW_KEY")
-BASE_URL = "https://api.siliconflow.com/v1"
+BASE_URL = "https://api.siliconflow.cn/v1"
 
 # ===== 模型（按特长分工，详见 README「模型选型」）=====
 # 建图谱：要稳定按格式抽实体，用 V3（已建好存盘，一般不重建）
@@ -35,11 +35,20 @@ VL_MODEL = "Qwen/Qwen2.5-VL-72B-Instruct"   # 多模态：图片识别
 # 重排序：检索后对 chunk 精排，提升相关性排序（召回→重排→生成 链路的"重排"环节）
 RERANK_MODEL = "Qwen/Qwen3-Reranker-8B"
 
+# ===== 引用指令（注入 LightRAG 查询的 user_prompt）=====
+# 背景：检索上下文里 100% 含正确条号，但默认生成常把条号丢掉(法条召回仅~68%)。
+# 经 eval A/B 验证(eval/run_eval.py)：本文案把漏引题命中 3/12→11/12，且不破坏原本引对的题、0 幻觉。
+# 关键是"只标检索内容中出现的条号、找不到就不标、绝不臆造"——泛泛要求标注反而会负优化。
+CITATION_PROMPT = (
+    "请在每条结论后用括号标注其依据的具体法条出处，格式如（《劳动合同法》第十九条）。"
+    "只标注检索内容中确实出现的条号，找不到对应条号就不标，绝不要臆造或猜测条号。"
+)
+
 # ===== 路径 =====
 WORKDIR = "./lightrag_store"        # 知识图谱数据
 CORPUS_PATH = "labor_law.txt"       # 主语料（建图用）
 # 引用核验读取的全部语料（含补充法规），缺失的会自动跳过
-CORPUS_FILES = ["labor_law.txt", "labor_law_extra.txt", "labor_law_extra2.txt"]
+CORPUS_FILES = ["labor_law.txt", "labor_law_extra.txt", "labor_law_extra2.txt", "labor_law_extra3.txt"]
 DB_PATH = "./chat_history.db"       # 对话历史
 
 # ===== 前后端分离：前端(law_app.py)调后端(law_api.py)的地址 =====
@@ -59,3 +68,7 @@ MAX_CONTRACT_LEN = 4000            # 合同分析截取的最大字数
 # ===== 重试 =====
 MAX_RETRIES = 3                     # API 调用失败重试次数
 RETRY_BASE_DELAY = 1.0             # 指数退避基准秒数
+
+# ===== 限流 =====
+RATE_LIMIT_ASK = "10/minute"        # FastAPI /ask 每 IP 每分钟最多请求数
+SESSION_RATE_LIMIT = 10             # Streamlit 会话每分钟最多提问/分析次数

@@ -1,0 +1,86 @@
+{
+  "中华人民共和国劳动法": {
+    "doc_id": "law-d3655737d1346d3b8f895dafbf249462",
+    "hash": "7522dd8445570c1a179dbfa6658fbc7e",
+    "source_url": "http://www.npc.gov.cn/zgrdw/npc/xinwen/2019-01/07/content_2070261.htm",
+    "synced_at": "2026-06-05"
+  },
+  "中华人民共和国劳动合同法": {
+    "doc_id": "law-951fcfd9c7daef6a163479907e3fe8df",
+    "hash": "939c66a5479a913f6c394c627b66c7a4",
+    "source_url": "http://www.npc.gov.cn/npc/c1773/c2518/c12898/201905/t20190523_46320.html",
+    "synced_at": "2026-06-05"
+  },
+  "中华人民共和国劳动合同法实施条例": {
+    "doc_id": "law-2da42b8d38e3f2ae566efa3ead0bacc4",
+    "hash": "92b0b04e0218fe504a4f63c107bc764e",
+    "source_url": "https://www.gov.cn/zwgk/2008-09/19/content_1099470.htm",
+    "synced_at": "2026-06-05"
+  },
+  "中华人民共和国社会保险法": {
+    "doc_id": "law-f047352f8838307d2a7f880f57253956",
+    "hash": "c0b7c9b2ff7bffc18ad3991e27c9a18c",
+    "source_url": "http://www.npc.gov.cn/zgrdw/npc/xinwen/2019-01/07/content_2070267.htm",
+    "synced_at": "2026-06-05"
+  },
+  "中华人民共和国劳动争议调解仲裁法": {
+    "doc_id": "law-fe720338b91c15e133a7801cd3a9df8e",
+    "hash": "fef7b237b2505da2c8d6355a5b5fb21e",
+    "source_url": "https://www.gjxfj.gov.cn/gjxfj/xxgk/fgwj/flfg/webinfo/2016/03/1460585589964384.htm",
+    "synced_at": "2026-06-05"
+  },
+  "中华人民共和国就业促进法": {
+    "doc_id": "law-6190c91abc36aa07c4ead89979fe285b",
+    "hash": "8cdf3d45d3cc4745b8d091acdc5c8b21",
+    "source_url": "https://www.gov.cn/guoqing/2021-10/29/content_5647636.htm",
+    "synced_at": "2026-06-05"
+  },
+  "工伤保险条例": {
+    "doc_id": "law-262404fdc2af8f53dbd77bd6ea3c98cb",
+    "hash": "a197cd20defb769f2437dcc3a77cbde9",
+    "source_url": "https://fgk.chinatax.gov.cn/zcfgk/c100010/c5194427/content.html",
+    "synced_at": "2026-06-05"
+  },
+  "职工带薪年休假条例": {
+    "doc_id": "law-15517db88aa246403d7b8efe0bf96337",
+    "hash": "88f6bfd4718e9e6ab16754892de937d8",
+    "source_url": "https://www.gov.cn/flfg/2007-12/16/content_835527.htm",
+    "synced_at": "2026-06-05"
+  },
+  "女职工劳动保护特别规定": {
+    "doc_id": "law-bbdb9e432914caf80686fe9cccab388c",
+    "hash": "3baf863f608bc9336849064e8940a50b",
+    "source_url": "https://www.gov.cn/zhengce/2012-05/07/content_2602602.htm",
+    "synced_at": "2026-06-05"
+  },
+  "劳动保障监察条例": {
+    "doc_id": "law-9be02cd6e7723ad5c4a0af85cdf983f5",
+    "hash": "ac81790387a0e2c2ec147508388404ab",
+    "source_url": "https://www.gov.cn/gongbao/content/2004/content_63042.htm",
+    "synced_at": "2026-06-05"
+  },
+  "工资支付暂行规定": {
+    "doc_id": "law-2aa79ff62c9756c69907524be4a7b988",
+    "hash": "ad25b89bdfb48dfdc60f60d41fbfb9cf",
+    "source_url": "https://www.gov.cn/zhengce/2022-08/31/content_5711284.htm",
+    "synced_at": "2026-06-05"
+  },
+  "最低工资规定": {
+    "doc_id": "law-66bcb4e9c247fddcc317b8df86061cbc",
+    "hash": "a3164a32fc09a36b356e5874a2ed3c0c",
+    "source_url": "https://www.gov.cn/zhengce/2022-08/31/content_5711292.htm",
+    "synced_at": "2026-06-05"
+  },
+  "劳务派遣暂行规定": {
+    "doc_id": "law-84aa879d145c20687e0c6160a5c22168",
+    "hash": "87083d5e3c40a711fd5cc39a21f87338",
+    "source_url": "https://www.gov.cn/gongbao/content/2014/content_2667613.htm",
+    "synced_at": "2026-06-05"
+  },
+  "最高人民法院关于审理劳动争议案件适用法律问题的解释（一）": {
+    "doc_id": "law-14710166f1255d4f3e21c60063983231",
+    "hash": "58c637cadaeb0f3edd44529fb68142d5",
+    "source_url": "https://www.court.gov.cn/fabu/xiangqing/282121.html",
+    "synced_at": "2026-06-05"
+  }
+}

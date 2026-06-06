@@ -10,6 +10,8 @@ import sqlite3
 import base64
 from datetime import datetime
 
+import time
+
 import streamlit as st
 from lightrag import QueryParam
 
@@ -17,6 +19,19 @@ import config
 import citation_check
 import auth
 from llm_utils import make_rag, sync_client, chat
+
+
+def _rate_limit_ok() -> bool:
+    """滑动窗口限流：60 秒内最多 SESSION_RATE_LIMIT 次操作，超限展示等待提示并返回 False。"""
+    now = time.time()
+    times: list = st.session_state.setdefault("_req_times", [])
+    times[:] = [t for t in times if now - t < 60]   # 清掉 60s 前的记录
+    if len(times) >= config.SESSION_RATE_LIMIT:
+        wait = int(60 - (now - times[0])) + 1
+        st.warning(f"⏳ 操作太频繁，请 **{wait} 秒**后再试（每分钟最多 {config.SESSION_RATE_LIMIT} 次）。")
+        return False
+    times.append(now)
+    return True
 
 st.set_page_config(page_title="劳动法智能助手", page_icon="⚖️", layout="wide")
 auth.require_password()   # 公网访问口令门（设了 APP_PASSWORD 才生效）
@@ -175,6 +190,8 @@ with tab1:
             st.markdown(m["content"])
 
     def answer(question):
+        if not _rate_limit_ok():
+            return
         question = question[:config.MAX_QUESTION_LEN]  # 限长
         save_message(st.session_state.conv_id, "user", question)
         st.session_state.messages.append({"role": "user", "content": question})
@@ -231,6 +248,8 @@ with tab2:
                 )
 
                 if st.button("开始分析", type="primary", key="analyze_pdf"):
+                    if not _rate_limit_ok():
+                        st.stop()
                     text_chunk = contract_text[:config.MAX_CONTRACT_LEN]
                     prompts = {
                         "全面风险扫描": f"""你是一位专业劳动法律师，请全面分析以下劳动合同：
@@ -292,6 +311,8 @@ with tab3:
         )
 
         if st.button("分析图片", type="primary", key="analyze_img"):
+            if not _rate_limit_ok():
+                st.stop()
             with st.spinner("正在识别分析图片..."):
                 img_bytes = uploaded_img.getvalue()
                 b64 = base64.b64encode(img_bytes).decode()

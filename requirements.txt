@@ -5,6 +5,7 @@ numpy
 python-dotenv
 fastapi
 uvicorn
+slowapi
 pdfplumber
 langchain
 langchain-community

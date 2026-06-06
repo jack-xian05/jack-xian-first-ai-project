@@ -9,8 +9,11 @@
 #   6. sudo systemctl status law-app     # 看是否 running
 #   7. journalctl -u law-app -f          # 看实时日志
 #
-# 关键：--server.address 127.0.0.1 让 streamlit 只监听本机，
-#       外部访问统一走 nginx（更安全；安全组 8501 端口可以不对公网开放）。
+# 如果触发重启熔断（5 分钟内崩溃 3 次），用以下命令手动复位：
+#   sudo systemctl reset-failed law-app && sudo systemctl start law-app
+#
+# --server.address 127.0.0.1 让 streamlit 只监听本机，
+# 外部访问统一走 nginx（安全组 8501 端口可以不对公网开放）。
 
 [Unit]
 Description=Labor Law Assistant (Streamlit)
@@ -27,9 +30,29 @@ ExecStart=/root/ai-test/.venv/bin/streamlit run law_app_v2.py \
     --server.port 8501 \
     --server.address 127.0.0.1 \
     --server.headless true
-# 崩溃自动重启
+
+# ===== 环境变量：从 .env 文件加载 API Key 等敏感配置 =====
+EnvironmentFile=/root/ai-test/.env
+
+# ===== 进程守护：崩溃自动重启 =====
 Restart=always
 RestartSec=5
+# 重启熔断：5 分钟内最多允许 3 次重启；超出后进入 failed 状态，防止无限循环消耗资源
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+# ===== 资源限制：防止单进程打爆服务器 =====
+# LightRAG 知识图谱 + 模型推理缓存大约占 ~800 MB，给 2.5 GB 安全余量
+MemoryMax=2500M
+# 禁止换出到 swap，内存超限时优先 OOM 本进程，不拖累其他服务
+MemorySwapMax=0
+# 允许最多使用 2 个核心的 CPU 时间（双核机器设 100%，四核设 200%）
+CPUQuota=200%
+
+# ===== 日志：交由 journald 统一管理，用 journalctl -u law-app 查看 =====
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=law-app
 
 [Install]
 WantedBy=multi-user.target

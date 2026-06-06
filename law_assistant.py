@@ -17,7 +17,7 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 SILICONFLOW_KEY = os.getenv("SILICONFLOW_KEY")
-BASE_URL = "https://api.siliconflow.com/v1"
+BASE_URL = "https://api.siliconflow.cn/v1"
 
 st.set_page_config(page_title="劳动法咨询助手", page_icon="⚖️")
 st.title("⚖️ 劳动法智能咨询助手")

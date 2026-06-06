@@ -21,6 +21,10 @@ _CITATION_ENUM = re.compile(
 )
 _ARTICLE = re.compile(r'第([一二三四五六七八九十百零两]+)条')
 
+# 抓取语料里每部法规前的【法规名称】头（crawl_npc.py 生成）。
+# 有了它，就能把该法正文里裸写的"第X条"全部登记成 (该法, X)，而不必依赖《法》第X条这种交叉引用。
+_LAW_HEADER = re.compile(r'^【法规名称】\s*(.+?)\s*$')
+
 
 def _normalize_law(name: str) -> str:
     """法律名归一化：去掉'中华人民共和国'前缀，便于匹配"""
@@ -40,12 +44,25 @@ def build_index(corpus_paths=None) -> set:
             continue
         with open(path, "r", encoding="utf-8") as f:
             text = f.read()
-        # 枚举感知：先取锚点 "《法》第X条"，再把其后连写的 "、第Y条" 也归到同一部法
+        # 第①趟（交叉引用）：取 "《法》第X条"，并把其后连写的 "、第Y条" 也归到同一部法。
+        # 适用于手写语料里"根据《X法》第Y条"这类跨法引用。
         for law, first, trailing in _CITATION_ENUM.findall(text):
             norm = _normalize_law(law)
             index.add((norm, first))
             for art in _ARTICLE.findall(trailing):
                 index.add((norm, art))
+        # 第②趟（按【法规名称】分节）：抓取语料里每部法的正文是裸写"第X条"的，
+        # 读到 header 后把本节内所有"第X条"都登记给当前这部法——这样全文每一条都可核验。
+        # （正文里裸写的"第X条"基本都指本法；引用别法时会带《》，已由第①趟正确归属。）
+        current = None
+        for line in text.splitlines():
+            m = _LAW_HEADER.match(line.strip())
+            if m:
+                current = _normalize_law(m.group(1))
+                continue
+            if current:
+                for art in _ARTICLE.findall(line):
+                    index.add((current, art))
     return index
 
 

@@ -4,6 +4,7 @@ FastAPI 后端 —— 把劳动法 AI 包成接口，供前端(law_app.py)或其
 特性：
   - 对话历史：接收 history，把多轮上下文拼进查询，支持"接着上一个问题问"
   - 鉴权：调 /ask 要带 X-API-Token 头(值在 .env 的 LAW_API_TOKEN)，防盗刷烧额度
+  - 限流：/ask 每 IP 每分钟最多 10 次（slowapi），超限返回 429
   - 限长：question 超长直接拒(Pydantic 校验)
   - 引用核验：返回里标出回答引用的法条哪些可信、哪些可能编造
   - 错误处理：查询异常返回 503，空结果给友好兜底
@@ -14,15 +15,22 @@ FastAPI 后端 —— 把劳动法 AI 包成接口，供前端(law_app.py)或其
 import os
 os.environ["EMBEDDING_USE_BASE64"] = "false"
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 import config
 import citation_check
 from llm_utils import make_rag
 from lightrag import QueryParam
 
-# ===== 全局：知识图谱(启动时加载一次，所有请求共用)=====
+# ===== 限流器：按客户端 IP 计数，进程内存存储（单实例部署够用）=====
+limiter = Limiter(key_func=get_remote_address)
+
+# ===== 全局：知识图谱（启动时加载一次，所有请求共用）=====
 rag = None
 
 
@@ -37,6 +45,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="劳动法 AI 接口", lifespan=lifespan)
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": f"请求过于频繁，请稍后再试（限制：{exc.detail}）"},
+    )
 
 
 # ===== 鉴权依赖 =====
@@ -53,9 +70,10 @@ class Question(BaseModel):
     history: list = []   # 对话历史(可选)，[{role, content}, ...]，用于多轮上下文
 
 
-# ===== 核心接口：POST /ask =====
+# ===== 核心接口：POST /ask（每 IP 每分钟最多 RATE_LIMIT_ASK 次）=====
 @app.post("/ask")
-async def ask(q: Question, x_api_token: str = Header(default="")):
+@limiter.limit(config.RATE_LIMIT_ASK)
+async def ask(request: Request, q: Question, x_api_token: str = Header(default="")):
     check_token(x_api_token)
 
     # 有历史就把最近几轮拼进查询，支持多轮追问
@@ -69,7 +87,7 @@ async def ask(q: Question, x_api_token: str = Header(default="")):
         query = q.question
 
     try:
-        answer = await rag.aquery(query, param=QueryParam(mode="hybrid"))
+        answer = await rag.aquery(query, param=QueryParam(mode="hybrid", user_prompt=config.CITATION_PROMPT))
     except Exception as e:
         # 上游 API 抖动/超时等，返回 503 告诉调用方"暂时不可用"，而非代码 bug
         raise HTTPException(status_code=503, detail=f"AI 服务暂时不可用：{e}")
